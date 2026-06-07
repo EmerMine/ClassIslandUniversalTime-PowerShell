@@ -63,7 +63,7 @@ param(
 
 # ---------- 配置文件路径 ----------
 $scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
-$configPath = Join-Path $scriptDirectory "UniversalTime.json"
+$configPath = Join-Path $scriptDirectory "ClassIslandUniversalTime.json"
 
 # ---------- 配置文件读写函数 ----------
 function Read-Config {
@@ -81,9 +81,19 @@ function Read-Config {
 
 function Write-Config {
     param([double]$compValue, [string]$ntpServer)
-    $config = @{ 
-        CompensationSeconds = $compValue
-        NtpServer           = $ntpServer
+    # 保留现有配置中的 Debug 和 SettingsJsonPath 字段
+    $existingConfig = $null
+    if (Test-Path $configPath) {
+        try {
+            $existingConfig = Get-Content $configPath -Raw | ConvertFrom-Json
+        }
+        catch { }
+    }
+    $config = @{
+        Debug                = if ($existingConfig -and $null -ne $existingConfig.Debug) { $existingConfig.Debug } else { $false }
+        SettingsJsonPath     = if ($existingConfig -and $existingConfig.SettingsJsonPath) { $existingConfig.SettingsJsonPath } else { $null }
+        CompensationSeconds  = $compValue
+        NtpServer            = $ntpServer
     }
     $config | ConvertTo-Json | Set-Content $configPath
     Write-Host "配置已保存到: $configPath (补偿值=$compValue, NTP服务器=$ntpServer)" -ForegroundColor Green
