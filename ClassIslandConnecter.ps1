@@ -29,9 +29,9 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 
 # ---------- 配置 ----------
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$configFilePath = Join-Path $scriptDir "ClassIslandConnecter.json"
+$configFilePath = Join-Path $scriptDir "ClassIslandUniversalTime.json"
 $universalScriptPath = Join-Path $scriptDir "UniversalTime.ps1"
-$logFilePath = Join-Path $scriptDir "ClassIslandConnecter.log"
+$logFilePath = Join-Path $scriptDir "ClassIslandUniversalTime.log"
 
 # 等待 ClassIsland 启动的最大秒数
 $maxWaitSeconds = 15
@@ -39,6 +39,8 @@ $maxWaitSeconds = 15
 # ---------- 读取配置 ----------
 $debugMode = $false   # 默认 false
 $cachedSettingsPath = $null
+$cachedNtpServer = $null
+$cachedCompensationSeconds = $null
 
 if (Test-Path $configFilePath) {
     try {
@@ -47,6 +49,10 @@ if (Test-Path $configFilePath) {
             $debugMode = [bool]$config.Debug
         }
         $cachedSettingsPath = $config.SettingsJsonPath
+        $cachedNtpServer = $config.NtpServer
+        if ($null -ne $config.CompensationSeconds) {
+            $cachedCompensationSeconds = [double]$config.CompensationSeconds
+        }
     }
     catch {
         # 静默失败，后续按默认处理
@@ -346,14 +352,16 @@ if ($null -eq $timeOffset) {
 Write-Log "最终使用的 TimeOffsetSeconds = $timeOffset 秒" -Color Green
 Write-Log "使用的 Settings.json 路径: $settingsPath" -Color Cyan
 
-# ---------- 保存配置（包含 Settings.json 路径和 Debug 模式）----------
+# ---------- 保存配置（包含 Settings.json 路径、Debug 模式、NTP 服务器和补偿值）----------
 try {
     $configToSave = @{
-        SettingsJsonPath = $settingsPath
-        Debug            = $debugMode
+        Debug                 = $debugMode
+        SettingsJsonPath      = $settingsPath
+        NtpServer             = if ($cachedNtpServer) { $cachedNtpServer } else { "ntp.aliyun.com" }
+        CompensationSeconds   = if ($null -ne $cachedCompensationSeconds) { $cachedCompensationSeconds } else { 0.0 }
     }
     $configToSave | ConvertTo-Json | Set-Content $configFilePath -Force
-    Write-Log "已将配置保存到: $configFilePath (Debug=$debugMode)" -Color Green
+    Write-Log "已将配置保存到: $configFilePath" -Color Green
 }
 catch {
     Write-Log "警告: 保存配置文件失败: $_" -Color Yellow
@@ -367,7 +375,16 @@ if (-not (Test-Path $universalScriptPath)) {
 
 Write-Log "正在调用 UniversalTime.ps1 -DelaySeconds $timeOffset ..." -Color Cyan
 try {
-    & $universalScriptPath -DelaySeconds $timeOffset
+    # 构建参数列表
+    $params = @{ DelaySeconds = $timeOffset }
+    if ($cachedNtpServer) {
+        $params.NtpServer = $cachedNtpServer
+    }
+    if ($null -ne $cachedCompensationSeconds) {
+        $params.CompensationSeconds = $cachedCompensationSeconds
+    }
+    # 使用 splatting 方式调用，避免参数解析问题
+    & $universalScriptPath @params
     $exitCode = $LASTEXITCODE
     if ($exitCode -ne 0) {
         Write-Log "UniversalTime.ps1 执行返回非零退出码: $exitCode" -Color Yellow
