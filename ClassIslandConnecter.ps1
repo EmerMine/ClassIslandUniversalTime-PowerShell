@@ -352,13 +352,30 @@ if ($null -eq $timeOffset) {
 Write-Log "最终使用的 TimeOffsetSeconds = $timeOffset 秒" -Color Green
 Write-Log "使用的 Settings.json 路径: $settingsPath" -Color Cyan
 
-# ---------- 保存配置（包含 Settings.json 路径、Debug 模式、NTP 服务器和补偿值）----------
+# ---------- 保存配置（包含 Settings.json 路径、Debug 模式、NTP 服务器、补偿值和监控设置）----------
 try {
+    # 读取现有的监控设置
+    $existingAutoExit = $false
+    $existingRestoreTime = $false
+    if (Test-Path $configFilePath) {
+        try {
+            $existingConfig = Get-Content $configFilePath -Raw | ConvertFrom-Json
+            if ($existingConfig.AutoExitOnClassIslandExit -eq $true) {
+                $existingAutoExit = $true
+            }
+            if ($existingConfig.RestoreTimeOnExit -eq $true) {
+                $existingRestoreTime = $true
+            }
+        }
+        catch { }
+    }
     $configToSave = @{
-        Debug                 = $debugMode
-        SettingsJsonPath      = $settingsPath
-        NtpServer             = if ($cachedNtpServer) { $cachedNtpServer } else { "ntp.aliyun.com" }
-        CompensationSeconds   = if ($null -ne $cachedCompensationSeconds) { $cachedCompensationSeconds } else { 0.0 }
+        Debug                       = $debugMode
+        SettingsJsonPath            = $settingsPath
+        NtpServer                   = if ($cachedNtpServer) { $cachedNtpServer } else { "ntp.aliyun.com" }
+        CompensationSeconds         = if ($null -ne $cachedCompensationSeconds) { $cachedCompensationSeconds } else { 0.0 }
+        AutoExitOnClassIslandExit   = $existingAutoExit
+        RestoreTimeOnExit           = $existingRestoreTime
     }
     $configToSave | ConvertTo-Json | Set-Content $configFilePath -Force
     Write-Log "已将配置保存到: $configFilePath" -Color Green
